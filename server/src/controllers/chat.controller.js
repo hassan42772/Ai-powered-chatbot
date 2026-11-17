@@ -96,7 +96,7 @@ export const chatController = async (req, res, next) => {
     // 8. Build token-based context
     // const context =buildContext(recentMessages);
 
-    const ragContext = await retrieveRelevantContext(message, category, userRole);
+    const ragContext = await retrieveRelevantContext(message, category, req.user);
 
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
@@ -114,7 +114,7 @@ export const chatController = async (req, res, next) => {
         conversation.summary,
         ragContext,
         category,
-        userRole
+        req.user
       );
 
       for await (const chunk of stream) {

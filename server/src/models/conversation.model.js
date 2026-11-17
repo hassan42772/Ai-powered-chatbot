@@ -9,7 +9,7 @@ const conversationSchema = new mongoose.Schema(
     category: {
       type: String,
       required: true,
-      enum: ["portfolio_data", "stranger_things"],
+      enum: ["portfolio_data", "stranger_things", "company_data"],
       default: "portfolio_data",
     },
     summary: {

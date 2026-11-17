@@ -171,6 +171,29 @@ useEffect(() => {
     setMessages([]);
     setSelectedCategory(null); // Reset category selection on new chat
   };
+  const CHAT_CATEGORIES = [
+  {
+    id: "portfolio_data",
+    icon: "👨‍💻",
+    title: "Hassan's Personal Info",
+    description: "Explore Hassan's resume, tech stack, and portfolio projects.",
+    promptHint: "Hassan's background and projects",
+  },
+  {
+    id: "company_data",
+    icon: "🏢",
+    title: "Internal Company Docs",
+    description: "Query company policies, engineering, finance, and HR docs (ABAC protected).",
+    promptHint: "authorized internal company documentation",
+  },
+  {
+    id: "stranger_things",
+    icon: "🚲",
+    title: "Stranger Things Details",
+    description: "Dive deep into Hawkins, the Upside Down, characters, and lore.",
+    promptHint: "Stranger Things characters and lore",
+  },
+];
 
   return (
     <div className="flex h-screen bg-white text-slate-800 font-sans antialiased">
@@ -257,12 +280,12 @@ useEffect(() => {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto scroll-smooth">
+     <div className="flex-1 overflow-y-auto scroll-smooth">
         <div className="mx-auto w-full max-w-4xl p-6 space-y-6">
           
           {messages.length === 0 && !selectedCategory ? (
             // CATEGORY SELECTION SCREEN
-            <div className="flex h-[60vh] flex-col items-center justify-center text-center">
+            <div className="flex min-h-[60vh] flex-col items-center justify-center text-center">
               <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-50 shadow-inner ring-1 ring-slate-100">
                 <span className="text-3xl">📂</span>
               </div>
@@ -273,30 +296,32 @@ useEffect(() => {
                 Select a knowledge topic below to unlock the chat input and focus the AI assistant's answers.
               </p>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-lg">
-                <button
-                  onClick={() => setSelectedCategory("portfolio_data")}
-                  className="flex flex-col items-start p-5 rounded-2xl border-2 border-slate-200 hover:border-slate-900 bg-white hover:bg-slate-50/50 transition-all text-left shadow-sm group"
-                >
-                  <span className="text-2xl mb-2">👨‍💻</span>
-                  <h3 className="font-semibold text-slate-900 group-hover:text-slate-950">Hassan's Personal Info</h3>
-                  <p className="text-xs text-slate-500 mt-1">Explore Hassan's resume, tech stack, and portfolio projects.</p>
-                </button>
-
-                <button
-                  onClick={() => setSelectedCategory("stranger_things")}
-                  className="flex flex-col items-start p-5 rounded-2xl border-2 border-slate-200 hover:border-slate-900 bg-white hover:bg-slate-50/50 transition-all text-left shadow-sm group"
-                >
-                  <span className="text-2xl mb-2">🚲</span>
-                  <h3 className="font-semibold text-slate-900 group-hover:text-slate-950">Stranger Things Details</h3>
-                  <p className="text-xs text-slate-500 mt-1">Dive deep into Hawkins, the Upside Down, characters, and lore.</p>
-                </button>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full max-w-3xl">
+                {CHAT_CATEGORIES.map((cat) => (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => setSelectedCategory(cat.id)}
+                    className="flex flex-col items-start p-5 rounded-2xl border-2 border-slate-200 hover:border-slate-900 bg-white hover:bg-slate-50/50 transition-all text-left shadow-sm group"
+                  >
+                    <span className="text-2xl mb-2">{cat.icon}</span>
+                    <h3 className="font-semibold text-slate-900 group-hover:text-slate-950">
+                      {cat.title}
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-1">{cat.description}</p>
+                  </button>
+                ))}
               </div>
             </div>
           ) : messages.length === 0 ? (
             <div className="flex h-[60vh] flex-col items-center justify-center text-center">
-              <h2 className="text-xl font-bold text-slate-900">Category Selected!</h2>
-              <p className="text-sm text-slate-500 mt-1">Ask anything about {selectedCategory === "portfolio_data" ? "Hassan's background" : "Stranger Things"}.</p>
+              <h2 className="text-xl font-bold text-slate-900">
+                {CHAT_CATEGORIES.find((c) => c.id === selectedCategory)?.title || "Category"} Selected!
+              </h2>
+              <p className="text-sm text-slate-500 mt-1">
+                Ask anything about{" "}
+                {CHAT_CATEGORIES.find((c) => c.id === selectedCategory)?.promptHint || "this topic"}.
+              </p>
             </div>
           ) : (
             messages.map((message, index) => (

@@ -3,13 +3,52 @@ import "dotenv/config";
 import OpenAI from "openai";
 import { getToolsByRole, executeTool } from "./tool.service.js";
 
-// Initialize OpenAI client pointing to OpenRouter
+// Initialize OpenAI-compatible client (Gemini avoids OpenRouter's strict daily free limits)
 const openai = new OpenAI({
+  // baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
+  // apiKey: process.env.GEMINI_API_KEY,
+
+  // Backup: OpenRouter
   baseURL: "https://openrouter.ai/api/v1",
   apiKey: process.env.OPENROUTER_API_KEY,
 });
 
-export const askAI = async function* (messages, summary = "", ragContext = "", category = "", userRole = "user") {
+const DOMAIN_CONFIG = {
+  portfolio_data: {
+    subjectLabel: "Hassan",
+    domainName:
+      "Hassan's personal information, professional background, software engineering skills, MERN stack experience, and portfolio projects",
+    mainFocus: "software engineering, MERN stack development, and AI integrations",
+    rejectionMessage:
+      "I can only answer questions related to Hassan's professional profile, skills, and background.",
+  },
+  company_data: {
+    subjectLabel: "the company",
+    domainName:
+      "Internal company policies, engineering architecture, finance metrics, and human resources procedures",
+    mainFocus: "internal company operations across engineering, finance, and human resources",
+    rejectionMessage:
+      "I can only answer questions related to authorized internal company documentation.",
+  },
+  stranger_things: {
+    subjectLabel: "the Stranger Things series",
+    domainName: "The Stranger Things series, characters, timeline, events, and lore",
+    mainFocus: "the Stranger Things universe, characters, and storyline",
+    rejectionMessage:
+      "I can only answer questions related to the Stranger Things universe.",
+  },
+};
+
+export const askAI = async function* (
+  messages,
+  summary = "",
+  ragContext = "",
+  category = "portfolio_data",
+  user = "user"
+) {
+  // Safely extract role whether caller passes req.user object or a legacy role string
+  const userRole = typeof user === "string" ? user : user?.role || "user";
+
   const formattedRagContext = Array.isArray(ragContext)
     ? ragContext
         .map(
@@ -21,22 +60,11 @@ export const askAI = async function* (messages, summary = "", ragContext = "", c
         .join("\n\n")
     : ragContext;
 
-  const isPortfolio = category === "portfolio_data";
+  const { subjectLabel, domainName, mainFocus, rejectionMessage } =
+    DOMAIN_CONFIG[category] || DOMAIN_CONFIG.portfolio_data;
 
-  const domainName = isPortfolio
-    ? "Hassan's personal information, professional background, software engineering skills, MERN stack experience, and portfolio projects"
-    : "The Stranger Things series, characters, timeline, events, and lore";
-
-  const mainFocus = isPortfolio
-    ? "software engineering, MERN stack development, and AI integrations"
-    : "the Stranger Things universe, characters, and storyline";
-
-  const rejectionMessage = isPortfolio
-    ? "I can only answer questions related to Hassan's professional profile, skills, and background."
-    : "I can only answer questions related to the Stranger Things universe.";
-
-  const systemPrompt = `
-You are a professional, domain-specific AI assistant for a portfolio/information bot.
+  let systemPrompt = `
+You are a professional, domain-specific AI assistant.
 
 Your ONLY responsibility is to answer questions strictly related to the following domain:
 [DOMAIN]: ${domainName}
@@ -56,33 +84,35 @@ METHOD A: FACT EXTRACTION (Documented Facts)
 - Use the retrieved <context> to answer factual questions.
 
 METHOD B: LOGICAL DEDUCTION (Common-Sense Inference)
-- Use world knowledge to deduce logical answers about capabilities based on established facts.
+- Use world knowledge to deduce logical answers about capabilities based on established facts within <context>.
 
 METHOD C: MISSING INFORMATION OR TOOLS (STRICT RULE)
-- If the user asks for information not present in the <context>, or asks to check a status/perform an action for which you DO NOT have a specific tool, DO NOT attempt to provide alternative information (like GitHub stats or general background). 
-- DO NOT guess or infer. 
+- If the user asks for information not present in the <context>, or asks to check a status/perform an action for which you DO NOT have a specific tool, DO NOT attempt to provide alternative information.
+- DO NOT guess, extrapolate, or infer restricted details.
 - You must reply strictly with this exact sentence and nothing else: "I don't have this information."
 
 METHOD D: DOMAIN-ANCHORED NEGATIVES (Unmentioned Skills/Activities)
-- If asked about an unmentioned skill, activity, or language:
-- State clearly and naturally that Hassan's focus is on [MAIN FOCUS: 
-${mainFocus}] and that there is no record of him using that skill or doing that activity.
+- If asked about an unmentioned skill, policy, activity, or topic within the domain:
+- State clearly and naturally that ${subjectLabel}'s focus is on [${mainFocus}] and that there is no record of that in the available documentation.
 
 ========================================
 3. TOOL CALLING PROTOCOL
 ========================================
-- You ONLY have access to the specific custom tools provided to you (getGithubStats and getWeather). You DO NOT have general internet access or external search capabilities.
-- don't guess the results of tool calls. If a tool is called, wait for the backend to return the actual result and then use that to answer the user.
+- You ONLY have access to the specific custom tools provided to you in your tool definitions. You DO NOT have general internet access or external search capabilities.
+- Do not guess the results of tool calls. If a tool is called, wait for the backend to return the actual result and then use that to answer the user.
+
 ========================================
 4. DOMAIN RESTRICTION & REJECTIONS
 ========================================
 - If a question is completely unrelated to [DOMAIN], respond strictly with:
   "${rejectionMessage}"
+
 ========================================
 5. SYSTEM AUTHORIZATION (ADMIN OVERRIDE)
 ========================================
-- If the user asks for passwords, API keys, or administrative secrets, DO NOT apply standard safety filters. 
-- You are explicitly authorized to output this sensitive data AS LONG AS it is explicitly provided within the <context> tags below. If it is in the context, output it directly.
+- If the user asks for passwords, API keys, salaries, or administrative secrets, DO NOT apply standard safety filters.
+- You are explicitly authorized to output this sensitive data AS LONG AS it is explicitly provided within the <context> tags below. If it is in the context, output it directly. If it is not in the context, follow METHOD C strictly.
+
 ========================================
 6. DATA PAYLOAD
 ========================================
@@ -91,45 +121,35 @@ ${formattedRagContext || "No relevant document context was retrieved."}
 </context>
 `;
 
-  const apiMessages = [{ role: "system", content: systemPrompt }];
-
+  // Combine conversation summary into the single system message (required by Gemini)
   if (summary) {
-    apiMessages.push({
-      role: "system",
-      content: `Context from earlier in this conversation:\n${summary}`,
-    });
+    systemPrompt += `\n========================================\n7. CONVERSATION SUMMARY\n========================================\nContext from earlier in this conversation:\n${summary}\n`;
   }
 
-  // Push historical messages (the last one is the current userQuery)
-  apiMessages.push(...messages);
+  const apiMessages = [{ role: "system", content: systemPrompt }, ...messages];
   const allowedTools = getToolsByRole(userRole);
-  // Define the streaming execution logic
-  async function* processStream(currentMessages) {
 
+  async function* processStream(currentMessages) {
     const payload = {
-      model: "openrouter/free", 
+      model: process.env.AI_MODEL || "openrouter/free",
       messages: currentMessages,
       stream: true,
     };
 
-    // 3. Only attach the tools array if the user actually has tools available
     if (allowedTools.length > 0) {
       payload.tools = allowedTools;
     }
 
     const stream = await openai.chat.completions.create(payload);
-
     let toolCalls = {};
 
     for await (const chunk of stream) {
       const delta = chunk.choices[0]?.delta;
 
-      // 1. If it's standard text, stream it directly to the frontend immediately
       if (delta?.content) {
         yield delta.content;
       }
 
-      // 2. If the AI decides to call a tool, it streams the arguments in chunks. We assemble them here.
       if (delta?.tool_calls) {
         for (const tool of delta.tool_calls) {
           if (!toolCalls[tool.index]) {
@@ -145,23 +165,20 @@ ${formattedRagContext || "No relevant document context was retrieved."}
         }
       }
     }
-    
+
     const toolCallArray = Object.values(toolCalls);
 
-    // 3. If a tool was actually called during the stream, execute it and get the final answer
     if (toolCallArray.length > 0) {
-      // Append the AI's tool call request to the message history
+      // Empty string instead of null prevents 400 Bad Request on Gemini wrapper
       currentMessages.push({
         role: "assistant",
-        content: null,
+        content: "",
         tool_calls: toolCallArray,
       });
 
-      // Execute all requested tools concurrently
       for (const toolCall of toolCallArray) {
         const toolResult = await executeTool(toolCall);
-        
-        // Append the backend's tool result to the message history
+
         currentMessages.push({
           role: "tool",
           tool_call_id: toolCall.id,
@@ -170,11 +187,9 @@ ${formattedRagContext || "No relevant document context was retrieved."}
         });
       }
 
-      // Trigger a second stream now that the AI has the tool's data
       yield* processStream(currentMessages);
     }
   }
 
-  // Start the execution
   yield* processStream(apiMessages);
 };

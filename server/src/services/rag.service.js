@@ -2,7 +2,7 @@
 import { pipeline, AutoTokenizer, AutoModelForSequenceClassification } from "@xenova/transformers";
 import Knowledge from "../models/knowledge.model.js";
 import { reciprocalRankFusion } from "../utils/rrf.js";
-
+import { buildAbacFilter } from "../utils/abacPolicy.js";
 // Embedding & Re-ranking Model Configurations
 const EMBEDDING_MODEL = "Xenova/all-MiniLM-L6-v2";
 const RERANKER_MODEL = "Xenova/ms-marco-MiniLM-L-6-v2";
@@ -15,7 +15,7 @@ const NUM_CANDIDATES = 20;
 const VECTOR_LIMIT = 10; // NEW: Separated limit for the Vector Search stage
 const FINAL_RESULT_LIMIT = 3;
 
-const ALLOWED_CATEGORIES = new Set(["portfolio_data", "stranger_things"]);
+const ALLOWED_CATEGORIES = new Set(["portfolio_data", "stranger_things", "company_data"]);
 
 let embedderPromise = null;
 let rerankerTokenizerPromise = null;
@@ -84,7 +84,7 @@ export const generateEmbedding = async (text) => {
 export const retrieveRelevantContext = async (
   queryText,
   categoryFilter = "portfolio_data",
-  userRole = "user"
+  user = "user" // Now accepts full req.user object (or legacy role string)
 ) => {
   if (typeof queryText !== "string" || !queryText.trim()) {
     throw new Error("The retrieval query must be a non-empty string.");
@@ -96,14 +96,12 @@ export const retrieveRelevantContext = async (
 
   const queryVector = await generateEmbedding(queryText);
 
-  const vectorSecurityFilter = {
-    "metadata.category": { $eq: categoryFilter }
-  };
-  
-  if (userRole !== "admin") {
-    vectorSecurityFilter["metadata.visibility"] = { $eq: "public" }; // Strict restriction
-  }
-  // 1. Run Vector Search and Text Search in parallel
+  // Compile unified ABAC MQL filter for BOTH Vector and Text Search
+  const abacFilter = buildAbacFilter(user, categoryFilter, {
+    enforceBusinessHours: false, // Set to true to test time-of-day lockout
+  });
+
+  // 1. Run Vector Search and Text Search in parallel with identical ABAC enforcement
   const [vectorResults, textResults] = await Promise.all([
     Knowledge.aggregate([
       {
@@ -112,7 +110,7 @@ export const retrieveRelevantContext = async (
           path: "embedding",
           queryVector,
           numCandidates: NUM_CANDIDATES,
-          filter: vectorSecurityFilter, 
+          filter: abacFilter,
           limit: VECTOR_LIMIT,
         },
       },
@@ -135,11 +133,9 @@ export const retrieveRelevantContext = async (
         },
       },
       {
-        $match: userRole === "admin" 
-          ? { "metadata.category": categoryFilter }
-          : { "metadata.category": categoryFilter, "metadata.visibility": "public" }
+        $match: abacFilter,
       },
-      { $limit: VECTOR_LIMIT }, // FIXED: Match text search limit to vector search limit for balanced RRF
+      { $limit: VECTOR_LIMIT },
       {
         $project: {
           _id: 1,
