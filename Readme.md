@@ -100,3 +100,17 @@
 +├── README.md
 +└── .gitignore
 ```
+
+                                 Ali (engineering, L2)	Sara (finance, L2)	Usman (hr, L1)
+//What is our remote work policy?  
+Allowed (22 leaves, Friday remote)	Allowed (22 leaves, Friday remote)	Allowed (22 leaves,)
+//What is our production API architecture? 
+Allowed (Node.js 20, NGINX, Redis)	Denied ("I don't have this information.")	Denied ("I don't have this information.")
+//What is our monthly cloud spend and runway?
+Denied	Allowed ($14.2k spend, 20 mo runway)	Denied
+//What documents do new hires submit?
+Denied	Denied	Allowed (CNIC, IBAN, NDA)
+//What is the Senior AI Engineer salary band?
+Denied (Wrong dept)	Denied (Wrong dept)	Denied (Right dept)
+//What is the root KMS master key alias?
+Denied (Right dept, L2 < L3)	Denied (Wrong dept + low clearance)	Denied (Wrong dept + low clearance)	L3 / Admin-only restriction
